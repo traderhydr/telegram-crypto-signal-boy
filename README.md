@@ -8,7 +8,7 @@ Educational / informational trade-**signal** bot for Telegram. It reads **public
 
 - Symbols: `BTCUSDT`, `ETHUSDT` (configurable)
 - Leverage label: **10x** (configurable; informational only - bot does not place orders)
-- Direction on **15m** candles (see [Strategy rules](#strategy-rules))
+- Direction on **15m** candles by default (`INTERVAL`; `1h` supported as experimental alt — see [Backtest](#backtest))
 - 4 configurable entry % offsets, 5 TP % targets, SL beyond the ladder
 - Per-symbol/side cooldown (~5h default) to reduce spam
 - Telegram Bot API -> channel; **dry-run** prints to stdout when `DRY_RUN=1` or tokens are missing
@@ -35,12 +35,12 @@ Documented in `indicators.find_swing` / `fib_confluence` and applied in `engine.
 
 1. Take the last `FIB_LOOKBACK` bars (default **80**, typical 50-100).
 2. `swing_high` = max(high) in the window; `swing_low` = min(low).
-3. **Upswing** if the low occurs *before* the high (prior up move).
+3. **Upswing** if the low occurs *before* the high (prior up move).  
    **Downswing** if the high occurs *before* the low (prior down move).
 4. Classic retracements **0.382 / 0.5 / 0.618**:
    - **LONG:** require an **upswing**; Fib *supports* = `high - ratio x (high - low)`. Price must be within tolerance of one of these (pullback into the zone).
    - **SHORT:** require a **downswing**; Fib *resistances* = `low + ratio x (high - low)`. Price must be within tolerance (bounce into the zone).
-5. **Tolerance** = `max(price x FIB_TOL_PCT/100, ATR(14) x FIB_TOL_ATR)`
+5. **Tolerance** = `max(price x FIB_TOL_PCT/100, ATR(14) x FIB_TOL_ATR)`  
    (defaults: 0.25% of price or 0.5xATR, whichever is larger).
 
 #### 2. MACD confirmation (`FILTER_MACD=1`)
@@ -150,12 +150,21 @@ python -m signal_bot --once
 
 ## Backtest
 
-Walk-forward backtest of the **same** live rules (EMA/RSI + enabled confluence filters), levels, and cooldown. Fetches paginated public Binance USDT-M 15m klines (~120 days by default; falls back to `www.binance.com` if `fapi` returns 451).
+Walk-forward backtest of the **same** live rules (EMA/RSI + enabled confluence filters), levels, and cooldown. Fetches paginated public Binance USDT-M klines for the configured interval (~120 days by default; falls back to `www.binance.com` if `fapi` returns 451).
+
+**Live default remains `INTERVAL=15m`.** `1h` is an optional / experimental alternate timeframe — use env or CLI override; do not assume it is better without checking the latest report.
 
 ```bash
+# Default 15m (INTERVAL env / Config)
 python -m signal_bot.backtest --days 120 --symbols BTCUSDT,ETHUSDT
 # or:
 python -m signal_bot --backtest --days 120 --symbols BTCUSDT,ETHUSDT
+
+# Experimental 1h timeframe
+python -m signal_bot.backtest --days 120 --symbols BTCUSDT,ETHUSDT --interval 1h
+# equivalent:
+INTERVAL=1h python -m signal_bot.backtest --days 120 --symbols BTCUSDT,ETHUSDT
+python -m signal_bot --backtest --days 120 --symbols BTCUSDT,ETHUSDT --interval 1h
 ```
 
 ### Simulation assumptions
@@ -171,6 +180,17 @@ python -m signal_bot --backtest --days 120 --symbols BTCUSDT,ETHUSDT
 | Overlap | At most one open simulated position per symbol |
 | Metrics | R-multiples where 1R = \|Entry1 - SL\| |
 
+### Recent filtered results (reference)
+
+Same filters (Fib+MACD+ATR on, ADX off), ~120 days, BTCUSDT+ETHUSDT:
+
+| TF | Trades | Win% | Total R | MaxDD R | PF | Notes |
+|----|--------|------|---------|---------|----|-------|
+| **15m** (default) | 124 | 44.4% | -2.23 | 14.55 | 0.95 | Primary / live default |
+| **1h** (experimental) | 47 | 40.4% | -1.25 | 4.61 | 0.93 | Fewer trades, lower DD; not clearly better overall |
+
+Re-run before changing the live default.
+
 ## Tests
 
 ```bash
@@ -185,7 +205,7 @@ Tests cover indicators (incl. MACD/ATR/ADX/Fib), level generation, filter logic,
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `SYMBOLS` | `BTCUSDT,ETHUSDT` | Comma-separated |
-| `INTERVAL` | `15m` | Binance interval |
+| `INTERVAL` | `15m` | Binance interval (`15m` live default; `1h` experimental via env/`--interval`) |
 | `LEVERAGE` | `10` | Label only |
 | `EMA_FAST` / `EMA_SLOW` | `9` / `21` | |
 | `RSI_*` | `14` / `70` / `30` | |
