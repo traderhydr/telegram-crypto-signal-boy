@@ -1,4 +1,4 @@
-"""Signal engine: EMA+RSI direction with Fib/MACD/ATR/ADX confluence."""
+"""Signal engine: EMA+RSI direction with Fib/MACD/ATR/ADX + volume/SMC confluence."""
 
 from __future__ import annotations
 
@@ -19,6 +19,8 @@ from .indicators import (
 )
 from .levels import generate_levels
 from .models import Side, Signal
+from .smc import smc_confluence
+from .volume import volume_price_agreement, volume_ratio_ok
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +45,24 @@ class SignalEngine:
 
     def _needs_ohlc(self) -> bool:
         cfg = self.config
-        return cfg.filter_fib or cfg.filter_atr or cfg.filter_adx
+        return (
+            cfg.filter_fib
+            or cfg.filter_atr
+            or cfg.filter_adx
+            or cfg.filter_smc
+        )
+
+    def _any_confluence(self) -> bool:
+        cfg = self.config
+        return (
+            cfg.filter_fib
+            or cfg.filter_macd
+            or cfg.filter_atr
+            or cfg.filter_adx
+            or cfg.filter_volume
+            or cfg.filter_obv
+            or cfg.filter_smc
+        )
 
     def _apply_confluence(
         self,
@@ -52,10 +71,12 @@ class SignalEngine:
         highs: Optional[Sequence[float]],
         lows: Optional[Sequence[float]],
         base_reason: str,
+        volumes: Optional[Sequence[float]] = None,
+        opens: Optional[Sequence[float]] = None,
     ) -> Tuple[Optional[Side], str]:
         """
-        Apply Fib / MACD / ATR / ADX gates. Returns (side|None, reason).
-        On failure, reason starts with 'skip ...'.
+        Apply Fib / MACD / ATR / ADX / volume / SMC gates.
+        Returns (side|None, reason). On failure, reason starts with 'skip ...'.
         """
         cfg = self.config
         price = closes[-1]
@@ -63,9 +84,14 @@ class SignalEngine:
 
         # --- ATR volatility filter ---
         atr_val: Optional[float] = None
-        if cfg.filter_atr or cfg.filter_fib:
+        need_atr = (
+            cfg.filter_atr
+            or cfg.filter_fib
+            or cfg.filter_smc
+        )
+        if need_atr:
             if highs is None or lows is None:
-                return None, "skip: OHLC required for ATR/Fib filters but missing"
+                return None, "skip: OHLC required for ATR/Fib/SMC filters but missing"
             atr_series = atr(highs, lows, closes, cfg.atr_period)
             atr_val = last_valid(atr_series)
             if atr_val is None or atr_val <= 0:
@@ -146,6 +172,68 @@ class SignalEngine:
                 )
             parts.append(f"ADX={adx_val:.1f}")
 
+        # --- Volume: relative volume ---
+        if cfg.filter_volume:
+            if volumes is None:
+                return None, "skip: volume required for FILTER_VOLUME but missing"
+            ok, detail = volume_ratio_ok(
+                volumes,
+                period=cfg.vol_sma_period,
+                min_ratio=cfg.vol_ratio_min,
+                confirm_bars=cfg.vol_confirm_bars,
+            )
+            if not ok:
+                return None, f"skip {side.value}: {detail}"
+            parts.append(detail)
+
+        # --- Volume: OBV / volume-price agreement ---
+        if cfg.filter_obv:
+            if volumes is None:
+                return None, "skip: volume required for FILTER_OBV but missing"
+            ok, detail = volume_price_agreement(
+                closes,
+                volumes,
+                side_long=(side == Side.LONG),
+                obv_lookback=cfg.obv_lookback,
+            )
+            if not ok:
+                return None, f"skip {side.value}: {detail}"
+            parts.append(detail)
+
+        # --- SMC (structure + FVG; optional OB) ---
+        if cfg.filter_smc:
+            if highs is None or lows is None:
+                return None, "skip: OHLC required for SMC but missing"
+            if opens is None:
+                # Fallback: approximate opens with prior close (engine always
+                # prefers real opens when available).
+                opens = [closes[0]] + list(closes[:-1])
+            assert atr_val is not None
+            ok, detail = smc_confluence(
+                price=price,
+                opens=opens,
+                highs=highs,
+                lows=lows,
+                closes=closes,
+                side_long=(side == Side.LONG),
+                atr_val=atr_val,
+                require_structure=cfg.filter_smc_structure,
+                require_fvg=cfg.filter_smc_fvg,
+                require_ob=cfg.filter_smc_ob,
+                swing_left=cfg.smc_swing_left,
+                swing_right=cfg.smc_swing_right,
+                structure_max_age=cfg.smc_structure_max_age,
+                fvg_lookback=cfg.smc_fvg_lookback,
+                fvg_touch_atr=cfg.smc_fvg_touch_atr,
+                ob_lookback=cfg.smc_ob_lookback,
+                ob_touch_atr=cfg.smc_ob_touch_atr,
+                ob_max_age=cfg.smc_ob_max_age,
+            )
+            if not ok:
+                # detail already starts with structure:/fvg:/ob:
+                return None, f"skip {side.value}: {detail}"
+            parts.append(detail)
+
         return side, "; ".join(parts)
 
     def decide_direction(
@@ -153,18 +241,17 @@ class SignalEngine:
         closes: list,
         highs: Optional[list] = None,
         lows: Optional[list] = None,
+        volumes: Optional[list] = None,
+        opens: Optional[list] = None,
     ) -> Tuple[Optional[Side], str, float, float, float]:
         """
         Base: LONG if fast EMA > slow EMA and RSI < overbought;
               SHORT if fast EMA < slow EMA and RSI > oversold.
 
         Confluence (when enabled via Config):
-          1. Fib - price near configured Fib levels (default 0.5/0.618) of swing
-          2. MACD - line > signal for LONG, opposite for SHORT
-          3. ATR - ATR% of price within [min, max] (chop / optional extreme)
-          4. ADX - ADX(14) >= adx_min (default 25)
+          Fib / MACD / ATR / ADX / relative volume / OBV / SMC (BOS+FVG[+OB]).
 
-        Pass highs/lows (same length as closes) when Fib/ATR/ADX filters are on.
+        Pass highs/lows/volumes/opens (same length as closes) when filters need them.
         Returns (side|None, reason, fast_ema, slow_ema, rsi).
         """
         cfg = self.config
@@ -218,15 +305,15 @@ class SignalEngine:
                 )
             return None, reason, fast, slow, rsi_val
 
-        # Confluence filters
-        if (
-            cfg.filter_fib
-            or cfg.filter_macd
-            or cfg.filter_atr
-            or cfg.filter_adx
-        ):
+        if self._any_confluence():
             side, reason = self._apply_confluence(
-                candidate, closes, highs, lows, base_reason
+                candidate,
+                closes,
+                highs,
+                lows,
+                base_reason,
+                volumes=volumes,
+                opens=opens,
             )
             return side, reason, fast, slow, rsi_val
 
@@ -236,15 +323,17 @@ class SignalEngine:
         """Fetch klines, decide direction, build signal or return None."""
         cfg = self.config
         candles = self.client.get_klines(symbol, cfg.interval, cfg.kline_limit)
+        opens = [c["open"] for c in candles]
         closes = [c["close"] for c in candles]
         highs = [c["high"] for c in candles]
         lows = [c["low"] for c in candles]
+        volumes = [c["volume"] for c in candles]
         if not closes:
             logger.warning("%s: no kline data", symbol)
             return None
 
         side, reason, fast, slow, rsi_val = self.decide_direction(
-            closes, highs=highs, lows=lows
+            closes, highs=highs, lows=lows, volumes=volumes, opens=opens
         )
         if side is None:
             logger.info("%s: %s", symbol, reason)
