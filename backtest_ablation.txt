@@ -1,0 +1,7 @@
+ABLATION SUMMARY (~120d 15m, Fib+MACD+ATR base)
+Fib+MACD+ATR     trades= 395 WR= 44.8% totalR=  -2.14 avgR=-0.005 maxDD= 28.94 PF=0.99
++HTF only        trades= 302 WR= 46.4% totalR= +13.56 avgR=+0.045 maxDD= 19.08 PF=1.12
++ST only         trades= 367 WR= 43.9% totalR=  -6.80 avgR=-0.019 maxDD= 29.56 PF=0.95
++HTF+ST          trades= 264 WR= 43.6% totalR=  +0.31 avgR=+0.001 maxDD= 26.87 PF=1.00
+
+See README for per-symbol tables. HTF helped; Supertrend alone hurt; combined ~flat.
