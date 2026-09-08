@@ -6,12 +6,9 @@ conservative OHLC, cooldown, R-multiples).
 
 from __future__ import annotations
 
-import argparse
 import logging
-import sys
-import time
-from datetime import datetime, timedelta, timezone
-from typing import List, Optional, Sequence, Tuple
+from datetime import timedelta
+from typing import Optional, Sequence
 
 from .backtest_core import (
     SymbolMetrics,
@@ -24,7 +21,7 @@ from .backtest_core import (
     update_metrics,
 )
 from .htf_supertrend import completed_htf_closes, resample_klines_to_htf
-from .binance_client import BinanceFuturesClient
+from .intervals import INTERVAL_MS
 from .config import Config
 from .engine import SignalEngine
 from .levels import generate_levels
@@ -34,16 +31,6 @@ logger = logging.getLogger(__name__)
 
 # Re-export helpers for tests: `from signal_bot.backtest import ...`
 
-INTERVAL_MS = {
-    "1m": 60_000,
-    "3m": 180_000,
-    "5m": 300_000,
-    "15m": 900_000,
-    "30m": 1_800_000,
-    "1h": 3_600_000,
-    "4h": 14_400_000,
-    "1d": 86_400_000,
-}
 
 
 def backtest_symbol(
@@ -134,7 +121,7 @@ def backtest_symbol(
 from .backtest_run import (  # noqa: E402
     _filter_summary,
     format_report,
-    main,
     merge_metrics,
     run_backtest,
 )
+from .backtest_cli import main  # noqa: E402
