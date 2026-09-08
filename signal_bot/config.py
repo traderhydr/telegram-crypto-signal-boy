@@ -47,19 +47,19 @@ class Config:
     rsi_overbought: float = 70.0
     rsi_oversold: float = 30.0
 
-    # --- Confluence filters (default: Fib + MACD + ATR + ADX) ---
+    # --- Confluence filters (default: Fib + MACD + ATR; ADX off) ---
     filter_fib: bool = True
     filter_macd: bool = True
     filter_atr: bool = True
-    filter_adx: bool = True  # ADX(14) trend-strength gate
+    filter_adx: bool = False  # ADX(14) optional; off by default
 
     # Fibonacci
     fib_lookback: int = 80  # bars for swing high/low (50-100 typical)
     # Absolute proximity = max(price * fib_tol_pct/100, atr * fib_tol_atr)
     fib_tol_pct: float = 0.25  # % of price
     fib_tol_atr: float = 0.5  # fraction of ATR(14)
-    # Confluence ratios (tightened default: 0.5 + 0.618 only; drop 0.382)
-    fib_levels: List[float] = field(default_factory=lambda: [0.5, 0.618])
+    # Confluence ratios (prior best: 0.382 + 0.5 + 0.618)
+    fib_levels: List[float] = field(default_factory=lambda: [0.382, 0.5, 0.618])
 
     # MACD 12/26/9
     macd_fast: int = 12
@@ -71,7 +71,7 @@ class Config:
     atr_min_pct: float = 0.15  # skip if ATR/price*100 < this (chop)
     atr_max_pct: float = 0.0  # 0 = disabled; else skip if ATR% above this
 
-    # ADX trend-strength gate (on by default)
+    # ADX trend-strength gate (off by default; ADX_MIN kept for when enabled)
     adx_period: int = 14
     adx_min: float = 25.0
 
@@ -137,13 +137,13 @@ class Config:
             filter_fib=_parse_bool(os.getenv("FILTER_FIB"), True),
             filter_macd=_parse_bool(os.getenv("FILTER_MACD"), True),
             filter_atr=_parse_bool(os.getenv("FILTER_ATR"), True),
-            filter_adx=_parse_bool(os.getenv("FILTER_ADX"), True),
+            filter_adx=_parse_bool(os.getenv("FILTER_ADX"), False),
             fib_lookback=int(os.getenv("FIB_LOOKBACK", "80")),
             fib_tol_pct=float(os.getenv("FIB_TOL_PCT", "0.25")),
             fib_tol_atr=float(os.getenv("FIB_TOL_ATR", "0.5")),
             fib_levels=_parse_float_list(
                 os.getenv("FIB_LEVELS", ""),
-                [0.5, 0.618],
+                [0.382, 0.5, 0.618],
             ),
             macd_fast=int(os.getenv("MACD_FAST", "12")),
             macd_slow=int(os.getenv("MACD_SLOW", "26")),
