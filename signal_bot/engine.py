@@ -1,4 +1,4 @@
-"""Signal engine: EMA+RSI direction with Fib/MACD/ATR/(optional ADX) confluence."""
+"""Signal engine: EMA+RSI direction with Fib/MACD/ATR/ADX confluence."""
 
 from __future__ import annotations
 
@@ -125,12 +125,13 @@ class SignalEngine:
                 lows=lows,
                 lookback=cfg.fib_lookback,
                 tolerance=tolerance,
+                ratios=cfg.fib_levels,
             )
             if not ok:
                 return None, f"skip {side.value}: Fib - {detail}"
             parts.append(f"Fib OK ({detail})")
 
-        # --- Optional ADX trend-strength gate ---
+        # --- ADX trend-strength gate ---
         if cfg.filter_adx:
             if highs is None or lows is None:
                 return None, "skip: OHLC required for ADX but missing"
@@ -158,10 +159,10 @@ class SignalEngine:
               SHORT if fast EMA < slow EMA and RSI > oversold.
 
         Confluence (when enabled via Config):
-          1. Fib - price near 0.382/0.5/0.618 of recent swing fitting the side
+          1. Fib - price near configured Fib levels (default 0.5/0.618) of swing
           2. MACD - line > signal for LONG, opposite for SHORT
           3. ATR - ATR% of price within [min, max] (chop / optional extreme)
-          4. ADX (optional) - ADX >= adx_min
+          4. ADX - ADX(14) >= adx_min (default 25)
 
         Pass highs/lows (same length as closes) when Fib/ATR/ADX filters are on.
         Returns (side|None, reason, fast_ema, slow_ema, rsi).
