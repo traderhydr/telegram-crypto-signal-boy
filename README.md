@@ -1,6 +1,6 @@
 # Telegram Crypto Signal Bot
 
-Educational / informational trade-**signal** bot for Telegram. It reads **public** Binance USDT-M futures klines (no API keys, **no live trading**), applies EMA + RSI on 15m candles with **Fib / MACD / ATR confluence filters**, and posts LONG/SHORT signals with a 4-entry ladder, 5 take-profits, and 1 stop-loss.
+Educational / informational trade-**signal** bot for Telegram. It reads **public** Binance USDT-M futures klines (no API keys, **no live trading**), applies EMA + RSI on 15m candles with **Fib / MACD / ATR / ADX confluence filters**, and posts LONG/SHORT signals with a 4-entry ladder, 5 take-profits, and 1 stop-loss.
 
 > **Disclaimer:** This is not financial advice. Signals are for research/demo only. You are responsible for any trading decisions.
 
@@ -25,7 +25,7 @@ Educational / informational trade-**signal** bot for Telegram. It reads **public
 
 Mixed / choppy / RSI-filtered setups are **skipped** and logged.
 
-### Confluence filters (default: Fib + MACD + ATR on; ADX off)
+### Confluence filters (default: Fib + MACD + ATR + ADX on)
 
 Signals only fire when the base setup **and** every enabled filter agree.
 
@@ -37,7 +37,7 @@ Documented in `indicators.find_swing` / `fib_confluence` and applied in `engine.
 2. `swing_high` = max(high) in the window; `swing_low` = min(low).
 3. **Upswing** if the low occurs *before* the high (prior up move).  
    **Downswing** if the high occurs *before* the low (prior down move).
-4. Classic retracements **0.382 / 0.5 / 0.618**:
+4. Default retracements **0.5 / 0.618** only (`FIB_LEVELS`; **0.382 dropped** for tighter confluence — restore via env if desired):
    - **LONG:** require an **upswing**; Fib *supports* = `high - ratio x (high - low)`. Price must be within tolerance of one of these (pullback into the zone).
    - **SHORT:** require a **downswing**; Fib *resistances* = `low + ratio x (high - low)`. Price must be within tolerance (bounce into the zone).
 5. **Tolerance** = `max(price x FIB_TOL_PCT/100, ATR(14) x FIB_TOL_ATR)`  
@@ -56,10 +56,10 @@ Documented in `indicators.find_swing` / `fib_confluence` and applied in `engine.
 - Skip if `ATR% < ATR_MIN_PCT` (default **0.15** - chop / dead market).
 - Optionally skip if `ATR_MAX_PCT > 0` and `ATR%` exceeds it (default **0** = disabled).
 
-#### 4. Optional ADX (`FILTER_ADX=0` by default)
+#### 4. ADX trend-strength (`FILTER_ADX=1` by default)
 
-- Wilder ADX(14); only trade if `ADX >= ADX_MIN` (default **20**).
-- Prefer Fib+MACD+ATR; enable ADX if you want a stronger trend gate.
+- Wilder ADX(14); only trade if `ADX >= ADX_MIN` (default **25**).
+- Set `FILTER_ADX=0` to disable the trend gate.
 
 ### Signal format (unchanged)
 
@@ -182,14 +182,15 @@ python -m signal_bot --backtest --days 120 --symbols BTCUSDT,ETHUSDT --interval 
 
 ### Recent filtered results (reference)
 
-Same filters (Fib+MACD+ATR on, ADX off), ~120 days, BTCUSDT+ETHUSDT:
+~120 days, BTCUSDT+ETHUSDT, 15m:
 
-| TF | Trades | Win% | Total R | MaxDD R | PF | Notes |
-|----|--------|------|---------|---------|----|-------|
-| **15m** (default) | 124 | 44.4% | -2.23 | 14.55 | 0.95 | Primary / live default |
-| **1h** (experimental) | 47 | 40.4% | -1.25 | 4.61 | 0.93 | Fewer trades, lower DD; not clearly better overall |
+| Stack | Trades | Win% | Total R | MaxDD R | PF | Notes |
+|-------|--------|------|---------|---------|----|-------|
+| Prior (Fib 0.382/0.5/0.618 + MACD + ATR, ADX off) | 124 | 44.4% | -2.23 | 14.55 | 0.95 | Previous filtered 15m |
+| **Current** (Fib **0.5/0.618** + MACD + ATR + **ADX>=25**) | 46 | 43.5% | -3.26 | 8.12 | 0.84 | Tighter Fib + ADX; lower DD, worse R/PF |
+| 1h experimental (prior filters) | 47 | 40.4% | -1.25 | 4.61 | 0.93 | Not live default |
 
-Re-run before changing the live default.
+**Current defaults:** `FIB_LEVELS=0.5,0.618`, `FILTER_ADX=1`, `ADX_MIN=25`, `INTERVAL=15m`. Still not live-ready on these metrics.
 
 ## Tests
 
@@ -212,12 +213,13 @@ Tests cover indicators (incl. MACD/ATR/ADX/Fib), level generation, filter logic,
 | `FILTER_FIB` | `1` | Fib confluence |
 | `FILTER_MACD` | `1` | MACD confirmation |
 | `FILTER_ATR` | `1` | ATR% chop/extreme gate |
-| `FILTER_ADX` | `0` | Optional ADX gate |
+| `FILTER_ADX` | `1` | ADX(14) trend-strength gate |
 | `FIB_LOOKBACK` | `80` | Swing window (bars) |
+| `FIB_LEVELS` | `0.5,0.618` | Fib confluence ratios (0.382 dropped) |
 | `FIB_TOL_PCT` / `FIB_TOL_ATR` | `0.25` / `0.5` | Proximity tolerance |
 | `MACD_FAST/SLOW/SIGNAL` | `12/26/9` | |
 | `ATR_PERIOD` / `ATR_MIN_PCT` / `ATR_MAX_PCT` | `14` / `0.15` / `0` | `0` max = off |
-| `ADX_PERIOD` / `ADX_MIN` | `14` / `20` | Used only if `FILTER_ADX=1` |
+| `ADX_PERIOD` / `ADX_MIN` | `14` / `25` | Used when `FILTER_ADX=1` |
 | `ENTRY_OFFSETS_PCT` | `0,-0.3,-0.6,-1.0` | Exactly 4 |
 | `TP_TARGETS_PCT` | `0.5,1.0,1.5,2.5,4.0` | Exactly 5 |
 | `SL_BEYOND_LADDER_PCT` | `0.5` | Beyond farthest entry |
@@ -230,11 +232,11 @@ Tests cover indicators (incl. MACD/ATR/ADX/Fib), level generation, filter logic,
 # Baseline EMA+RSI only (previous behaviour)
 FILTER_FIB=0 FILTER_MACD=0 FILTER_ATR=0 FILTER_ADX=0 python -m signal_bot.backtest --days 120
 
-# Default confluence stack
-FILTER_FIB=1 FILTER_MACD=1 FILTER_ATR=1 FILTER_ADX=0 python -m signal_bot.backtest --days 120
+# Default confluence stack (Fib 0.5/0.618 + MACD + ATR + ADX>=25)
+FILTER_FIB=1 FILTER_MACD=1 FILTER_ATR=1 FILTER_ADX=1 ADX_MIN=25 python -m signal_bot.backtest --days 120
 
-# Add ADX trend gate
-FILTER_ADX=1 ADX_MIN=25 python -m signal_bot.backtest --days 120
+# Restore shallow Fib 0.382 or disable ADX
+FIB_LEVELS=0.382,0.5,0.618 FILTER_ADX=0 python -m signal_bot.backtest --days 120
 ```
 
 ## License
