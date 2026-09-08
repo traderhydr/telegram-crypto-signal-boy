@@ -13,6 +13,10 @@ def _engine(**kwargs) -> SignalEngine:
         filter_macd=False,
         filter_atr=False,
         filter_adx=False,
+        filter_volume=False,
+        filter_obv=False,
+        filter_smc=False,
+        filter_smc_ob=False,
     )
     defaults.update(kwargs)
     cfg = Config(**defaults)
@@ -289,3 +293,8 @@ def test_config_defaults_fib_and_adx():
     assert cfg.fib_levels == [0.382, 0.5, 0.618]
     assert cfg.interval == "15m"
     assert cfg.filter_fib and cfg.filter_macd and cfg.filter_atr
+    assert cfg.filter_volume is True
+    assert cfg.filter_obv is True
+    assert cfg.filter_smc is True
+    assert cfg.filter_smc_ob is False
+    assert cfg.vol_ratio_min == 1.2
