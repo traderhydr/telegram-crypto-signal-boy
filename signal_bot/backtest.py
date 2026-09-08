@@ -137,7 +137,8 @@ def merge_metrics(parts: Sequence[SymbolMetrics], label: str = "COMBINED") -> Sy
 def _filter_summary(config: Config) -> str:
     flags = []
     if config.filter_fib:
-        flags.append(f"Fib(lb={config.fib_lookback})")
+        lv = "/".join(f"{x:g}" for x in config.fib_levels)
+        flags.append(f"Fib(lb={config.fib_lookback},{lv})")
     if config.filter_macd:
         flags.append(
             f"MACD({config.macd_fast}/{config.macd_slow}/{config.macd_signal})"
