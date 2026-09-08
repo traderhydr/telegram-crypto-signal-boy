@@ -1,6 +1,6 @@
 # Telegram Crypto Signal Bot
 
-Educational / informational trade-**signal** bot for Telegram. It reads **public** Binance USDT-M futures klines (no API keys, **no live trading**), applies EMA + RSI on 15m candles with **Fib / MACD / ATR confluence filters** (ADX optional, off by default), and posts LONG/SHORT signals with a 4-entry ladder, 5 take-profits, and 1 stop-loss.
+Educational / informational trade-**signal** bot for Telegram. It reads **public** Binance USDT-M futures klines (no API keys, **no live trading**), applies EMA + RSI on 15m candles with **Fib / MACD / ATR / volume / SMC confluence filters** (ADX and SMC order-block optional; ADX and OB off by default), and posts LONG/SHORT signals with a 4-entry ladder, 5 take-profits, and 1 stop-loss.
 
 > **Disclaimer:** This is not financial advice. Signals are for research/demo only. You are responsible for any trading decisions.
 
@@ -25,7 +25,7 @@ Educational / informational trade-**signal** bot for Telegram. It reads **public
 
 Mixed / choppy / RSI-filtered setups are **skipped** and logged.
 
-### Confluence filters (default: Fib + MACD + ATR on; ADX off)
+### Confluence filters (default: Fib + MACD + ATR + Volume + SMC on; ADX/OB off)
 
 Signals only fire when the base setup **and** every enabled filter agree.
 
@@ -61,6 +61,28 @@ Documented in `indicators.find_swing` / `fib_confluence` and applied in `engine.
 - Wilder ADX(14); when enabled, only trade if `ADX >= ADX_MIN` (default **25**).
 - Off by default; set `FILTER_ADX=1` to enable the trend gate.
 
+#### 5. Volume filters (`FILTER_VOLUME=1`, `FILTER_OBV=1` by default)
+
+Pragmatic volume gates in `signal_bot/volume.py` (not volume-profile / footprint):
+
+1. **Relative volume** (`FILTER_VOLUME`): `vol_ratio = volume / SMA(volume, VOL_SMA_PERIOD)` (default SMA **20**).
+   Require `vol_ratio >= VOL_RATIO_MIN` (default **1.2**) on the signal bar, or the max over the last `VOL_CONFIRM_BARS` bars (default **1**).
+2. **OBV / volume-price agreement** (`FILTER_OBV`): On-Balance Volume slope over `OBV_LOOKBACK` (default **5**).
+   - LONG: OBV slope > 0 (and not collapsing volume on an up-close).
+   - SHORT: OBV slope < 0 (and not collapsing volume on a down-close).
+
+Skip reasons are logged with a `volume:` / `obv:` prefix.
+
+#### 6. SMC approximations (`FILTER_SMC=1` by default)
+
+**Not a TradingView SMC clone.** Practical, testable definitions in `signal_bot/smc.py`:
+
+1. **Market structure / BOS** (`FILTER_SMC_STRUCTURE=1`): fractal swing highs/lows (`SMC_SWING_LEFT/RIGHT`, default **3**). A **Break of Structure** is a close beyond the most recent confirmed unbroken swing high (bullish) or swing low (bearish). Require the latest BOS within `SMC_STRUCTURE_MAX_AGE` bars (default **40**) to align with the trade side. (First counter-trend BOS acts as CHoCH without a separate label.)
+2. **Fair Value Gap** (`FILTER_SMC_FVG=1`): 3-candle imbalance — bullish if `low[i] > high[i-2]`, bearish if `high[i] < low[i-2]`. Require a recent **unfilled** directional FVG that price is inside / wick-touching / within `SMC_FVG_TOUCH_ATR * ATR` (default **0.35**).
+3. **Order block** (`FILTER_SMC_OB=0` by default): last opposing candle before the impulsive move that created the aligned BOS; require price near the body zone within `SMC_OB_TOUCH_ATR * ATR` (default **0.5**). Optional to preserve sample size.
+
+Skip reasons use `structure:` / `fvg:` / `ob:` prefixes.
+
 ### Signal format (unchanged)
 
 Still **4 entries / 5 TPs / 10x** leverage label + 1 SL beyond the ladder.
@@ -75,6 +97,8 @@ signal_bot/
   models.py           # Signal dataclass + message format
   binance_client.py   # public klines client (+ paginated history)
   indicators.py       # EMA, RSI, MACD, ATR, ADX, Fib helpers
+  volume.py           # relative volume, OBV helpers
+  smc.py              # practical BOS / FVG / order-block approximations
   levels.py           # entries / TPs / SL
   engine.py           # direction + confluence + cooldown + scan
   backtest_core.py    # fill simulation helpers
@@ -83,8 +107,11 @@ signal_bot/
   runner.py           # CLI
 tests/
   test_indicators.py
+  test_volume.py
+  test_smc.py
   test_levels.py
   test_engine_direction.py
+  test_engine_volume_smc.py
   test_backtest.py
 .env.example
 requirements.txt
@@ -182,7 +209,9 @@ python -m signal_bot --backtest --days 120 --interval 1h
 
 ### Recent filtered results (reference)
 
-~120 days, **default 6-symbol** universe (`BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,DOGEUSDT`), 15m, Fib 0.382/0.5/0.618 + MACD + ATR (ADX off):
+#### Prior multi-coin baseline (Fib + MACD + ATR only; no volume/SMC)
+
+~120 days, **default 6-symbol** universe, 15m:
 
 | Symbol | Trades | Win% | Total R | MaxDD R | PF |
 |--------|--------|------|---------|---------|----|
@@ -194,15 +223,23 @@ python -m signal_bot --backtest --days 120 --interval 1h
 | DOGEUSDT | 78 | 47.4% | +3.09 | 4.94 | 1.11 |
 | **COMBINED** | **396** | **45.5%** | **-0.37** | **28.77** | **1.00** |
 
-vs BTC+ETH-only baseline (same filters/timeframe): **124 trades / 44.4% / -2.23R / maxDD 14.56 / PF 0.95**. Expanding improves total R and PF slightly, but combined maxDD rises; **SOLUSDT** (and BTC) drag hardest, while **XRPUSDT/DOGEUSDT** help.
+#### Current defaults (+ Volume + SMC BOS/FVG; OB off)
 
-| Stack (BTC+ETH historical) | Trades | Win% | Total R | MaxDD R | PF | Notes |
-|-------|--------|------|---------|---------|----|-------|
-| Fib 0.382/0.5/0.618 + MACD + ATR, ADX off | 124 | 44.4% | -2.23 | 14.56 | 0.95 | Prior BTC+ETH baseline |
-| Alternate (Fib **0.5/0.618** + MACD + ATR + **ADX>=25**) | 46 | 43.5% | -3.26 | 8.12 | 0.84 | Tighter Fib + ADX |
-| 1h experimental (same filters as current) | 47 | 40.4% | -1.25 | 4.61 | 0.93 | Not live default |
+| Symbol | Trades | Win% | Total R | MaxDD R | PF |
+|--------|--------|------|---------|---------|----|
+| BTCUSDT | 24 | 41.7% | -3.85 | 4.79 | 0.65 |
+| ETHUSDT | 24 | 50.0% | +0.50 | 3.40 | 1.05 |
+| SOLUSDT | 17 | 35.3% | -1.79 | 3.19 | 0.70 |
+| BNBUSDT | 21 | 47.6% | -0.12 | 4.72 | 0.98 |
+| XRPUSDT | 13 | 53.8% | +1.34 | 1.73 | 1.29 |
+| DOGEUSDT | 23 | 47.8% | +2.13 | 3.40 | 1.24 |
+| **COMBINED** | **122** | **45.9%** | **-1.79** | **13.05** | **0.96** |
 
-**Current defaults:** `SYMBOLS=BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,DOGEUSDT`, `FIB_LEVELS=0.382,0.5,0.618`, `FILTER_ADX=0`, `INTERVAL=15m`. Still not live-ready on these metrics.
+vs prior multi-coin (Fib+MACD+ATR only): **396 / 45.5% / -0.37R / maxDD 28.77 / PF 1.00**.
+Volume+SMC cuts trades ~3× and roughly halves maxDD, but **does not improve expectancy** (total R and PF slightly worse). Still not live-ready.
+
+
+**Current defaults:** `SYMBOLS=BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,DOGEUSDT`, `FIB_LEVELS=0.382,0.5,0.618`, `FILTER_VOLUME=1`, `FILTER_OBV=1`, `FILTER_SMC=1`, `FILTER_SMC_OB=0`, `FILTER_ADX=0`, `INTERVAL=15m`. Still not live-ready on these metrics.
 
 ## Tests
 
@@ -211,7 +248,7 @@ pip install pytest
 pytest -q
 ```
 
-Tests cover indicators (incl. MACD/ATR/ADX/Fib), level generation, filter logic, and backtest simulation helpers **without network**.
+Tests cover indicators (incl. MACD/ATR/ADX/Fib), volume/SMC helpers, level generation, filter logic, and backtest simulation helpers **without network**.
 
 ## Configuration cheat sheet
 
@@ -226,6 +263,16 @@ Tests cover indicators (incl. MACD/ATR/ADX/Fib), level generation, filter logic,
 | `FILTER_MACD` | `1` | MACD confirmation |
 | `FILTER_ATR` | `1` | ATR% chop/extreme gate |
 | `FILTER_ADX` | `0` | ADX(14) trend-strength gate (off by default) |
+| `FILTER_VOLUME` | `1` | Relative volume vs SMA |
+| `VOL_SMA_PERIOD` / `VOL_RATIO_MIN` | `20` / `1.2` | Rel-vol gate |
+| `VOL_CONFIRM_BARS` | `1` | Signal bar (or last N) |
+| `FILTER_OBV` / `OBV_LOOKBACK` | `1` / `5` | OBV slope agreement |
+| `FILTER_SMC` | `1` | Enable SMC stack (BOS+FVG) |
+| `FILTER_SMC_STRUCTURE` / `FILTER_SMC_FVG` | `1` / `1` | Core SMC pieces |
+| `FILTER_SMC_OB` | `0` | Optional order-block gate |
+| `SMC_SWING_LEFT/RIGHT` | `3` / `3` | Fractal swing size |
+| `SMC_STRUCTURE_MAX_AGE` | `40` | Max bars since aligned BOS |
+| `SMC_FVG_LOOKBACK` / `SMC_FVG_TOUCH_ATR` | `60` / `0.35` | FVG search / proximity |
 | `FIB_LOOKBACK` | `80` | Swing window (bars) |
 | `FIB_LEVELS` | `0.382,0.5,0.618` | Fib confluence ratios (prior best) |
 | `FIB_TOL_PCT` / `FIB_TOL_ATR` | `0.25` / `0.5` | Proximity tolerance |
@@ -244,8 +291,15 @@ Tests cover indicators (incl. MACD/ATR/ADX/Fib), level generation, filter logic,
 # Baseline EMA+RSI only (previous behaviour)
 FILTER_FIB=0 FILTER_MACD=0 FILTER_ATR=0 FILTER_ADX=0 python -m signal_bot.backtest --days 120
 
-# Default confluence stack (Fib 0.382/0.5/0.618 + MACD + ATR; ADX off)
-FILTER_FIB=1 FILTER_MACD=1 FILTER_ATR=1 FILTER_ADX=0 python -m signal_bot.backtest --days 120
+# Default confluence stack (Fib + MACD + ATR + Volume + SMC BOS/FVG; ADX/OB off)
+FILTER_FIB=1 FILTER_MACD=1 FILTER_ATR=1 FILTER_VOLUME=1 FILTER_OBV=1 FILTER_SMC=1 FILTER_SMC_OB=0 FILTER_ADX=0 \
+  python -m signal_bot.backtest --days 120
+
+# Prior multi-coin baseline (no volume/SMC)
+FILTER_VOLUME=0 FILTER_OBV=0 FILTER_SMC=0 python -m signal_bot.backtest --days 120
+
+# Enable optional SMC order-block
+FILTER_SMC_OB=1 python -m signal_bot.backtest --days 120
 
 # Tighter Fib + enable ADX
 FIB_LEVELS=0.5,0.618 FILTER_ADX=1 ADX_MIN=25 python -m signal_bot.backtest --days 120
