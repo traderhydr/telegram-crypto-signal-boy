@@ -216,26 +216,43 @@ def run_backtest(
     range_start: Optional[datetime] = None
     range_end: Optional[datetime] = None
 
+    skipped: List[str] = []
     for symbol in symbols:
         logger.info("Fetching ~%.0f days of %s %s klines...", days, symbol, interval)
-        candles = client.get_historical_klines(
-            symbol, interval=interval, start_time=fetch_start, end_time=end_ms,
-        )
-        if len(candles) < warm + 10:
-            raise RuntimeError(
-                f"Not enough candles for {symbol}: got {len(candles)}, need >{warm}"
+        try:
+            candles = client.get_historical_klines(
+                symbol, interval=interval, start_time=fetch_start, end_time=end_ms,
             )
-        eval_candles = [
-            c for c in candles if c["open_time"] >= start_ms - warm * interval_ms
-        ]
-        logger.info("%s: %d candles loaded", symbol, len(eval_candles))
-        m = backtest_symbol(eval_candles, symbol, config, engine)
-        per_symbol.append(m)
-        if eval_candles:
-            cs = _ms_to_dt(eval_candles[0]["open_time"])
-            ce = _ms_to_dt(eval_candles[-1]["close_time"])
-            range_start = cs if range_start is None else min(range_start, cs)
-            range_end = ce if range_end is None else max(range_end, ce)
+            if len(candles) < warm + 10:
+                raise RuntimeError(
+                    f"Not enough candles for {symbol}: got {len(candles)}, need >{warm}"
+                )
+            eval_candles = [
+                c for c in candles if c["open_time"] >= start_ms - warm * interval_ms
+            ]
+            logger.info("%s: %d candles loaded", symbol, len(eval_candles))
+            m = backtest_symbol(eval_candles, symbol, config, engine)
+            per_symbol.append(m)
+            if eval_candles:
+                cs = _ms_to_dt(eval_candles[0]["open_time"])
+                ce = _ms_to_dt(eval_candles[-1]["close_time"])
+                range_start = cs if range_start is None else min(range_start, cs)
+                range_end = ce if range_end is None else max(range_end, ce)
+        except Exception as exc:
+            logger.error(
+                "Skipping %s: failed to fetch/backtest (%s). Continuing with other symbols.",
+                symbol,
+                exc,
+            )
+            skipped.append(symbol)
+
+    if not per_symbol:
+        raise RuntimeError(
+            "No symbols produced backtest results"
+            + (f"; skipped: {', '.join(skipped)}" if skipped else "")
+        )
+    if skipped:
+        logger.warning("Skipped symbols due to fetch/data errors: %s", ", ".join(skipped))
 
     combined = merge_metrics(per_symbol)
     assert range_start and range_end
