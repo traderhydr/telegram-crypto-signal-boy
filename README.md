@@ -6,7 +6,7 @@ Educational / informational trade-**signal** bot for Telegram. It reads **public
 
 ## Features
 
-- Symbols: `BTCUSDT`, `ETHUSDT` (configurable)
+- Symbols: `BTCUSDT`, `ETHUSDT`, `SOLUSDT`, `BNBUSDT`, `XRPUSDT`, `DOGEUSDT` (configurable)
 - Leverage label: **10x** (configurable; informational only - bot does not place orders)
 - Direction on **15m** candles by default (`INTERVAL`; `1h` supported as experimental alt — see [Backtest](#backtest))
 - 4 configurable entry % offsets, 5 TP % targets, SL beyond the ladder
@@ -155,16 +155,16 @@ Walk-forward backtest of the **same** live rules (EMA/RSI + enabled confluence f
 **Live default remains `INTERVAL=15m`.** `1h` is an optional / experimental alternate timeframe — use env or CLI override; do not assume it is better without checking the latest report.
 
 ```bash
-# Default 15m (INTERVAL env / Config)
-python -m signal_bot.backtest --days 120 --symbols BTCUSDT,ETHUSDT
+# Default 15m + default 6-symbol universe (INTERVAL / SYMBOLS from Config)
+python -m signal_bot.backtest --days 120
 # or:
-python -m signal_bot --backtest --days 120 --symbols BTCUSDT,ETHUSDT
+python -m signal_bot --backtest --days 120
 
-# Experimental 1h timeframe
-python -m signal_bot.backtest --days 120 --symbols BTCUSDT,ETHUSDT --interval 1h
-# equivalent:
-INTERVAL=1h python -m signal_bot.backtest --days 120 --symbols BTCUSDT,ETHUSDT
-python -m signal_bot --backtest --days 120 --symbols BTCUSDT,ETHUSDT --interval 1h
+# Override symbols / experimental 1h timeframe
+python -m signal_bot.backtest --days 120 --symbols BTCUSDT,ETHUSDT
+python -m signal_bot.backtest --days 120 --interval 1h
+INTERVAL=1h python -m signal_bot.backtest --days 120
+python -m signal_bot --backtest --days 120 --interval 1h
 ```
 
 ### Simulation assumptions
@@ -182,15 +182,27 @@ python -m signal_bot --backtest --days 120 --symbols BTCUSDT,ETHUSDT --interval 
 
 ### Recent filtered results (reference)
 
-~120 days, BTCUSDT+ETHUSDT, 15m:
+~120 days, **default 6-symbol** universe (`BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,DOGEUSDT`), 15m, Fib 0.382/0.5/0.618 + MACD + ATR (ADX off):
 
-| Stack | Trades | Win% | Total R | MaxDD R | PF | Notes |
+| Symbol | Trades | Win% | Total R | MaxDD R | PF |
+|--------|--------|------|---------|---------|----|
+| BTCUSDT | 49 | 40.8% | -2.40 | 12.58 | 0.87 |
+| ETHUSDT | 75 | 46.7% | +0.38 | 6.54 | 1.01 |
+| SOLUSDT | 79 | 41.8% | -5.04 | 13.32 | 0.84 |
+| BNBUSDT | 47 | 48.9% | +0.56 | 5.05 | 1.03 |
+| XRPUSDT | 68 | 47.1% | +3.04 | 5.33 | 1.11 |
+| DOGEUSDT | 78 | 47.4% | +3.09 | 4.94 | 1.11 |
+| **COMBINED** | **396** | **45.5%** | **-0.37** | **28.77** | **1.00** |
+
+vs BTC+ETH-only baseline (same filters/timeframe): **124 trades / 44.4% / -2.23R / maxDD 14.56 / PF 0.95**. Expanding improves total R and PF slightly, but combined maxDD rises; **SOLUSDT** (and BTC) drag hardest, while **XRPUSDT/DOGEUSDT** help.
+
+| Stack (BTC+ETH historical) | Trades | Win% | Total R | MaxDD R | PF | Notes |
 |-------|--------|------|---------|---------|----|-------|
-| **Current** (Fib 0.382/0.5/0.618 + MACD + ATR, ADX off) | 124 | 44.4% | -2.23 | 14.56 | 0.95 | Prior best / live defaults |
-| Alternate (Fib **0.5/0.618** + MACD + ATR + **ADX>=25**) | 46 | 43.5% | -3.26 | 8.12 | 0.84 | Tighter Fib + ADX; lower DD, worse R/PF |
+| Fib 0.382/0.5/0.618 + MACD + ATR, ADX off | 124 | 44.4% | -2.23 | 14.56 | 0.95 | Prior BTC+ETH baseline |
+| Alternate (Fib **0.5/0.618** + MACD + ATR + **ADX>=25**) | 46 | 43.5% | -3.26 | 8.12 | 0.84 | Tighter Fib + ADX |
 | 1h experimental (same filters as current) | 47 | 40.4% | -1.25 | 4.61 | 0.93 | Not live default |
 
-**Current defaults:** `FIB_LEVELS=0.382,0.5,0.618`, `FILTER_ADX=0`, `ADX_MIN=25` (used when ADX enabled), `INTERVAL=15m`. Still not live-ready on these metrics.
+**Current defaults:** `SYMBOLS=BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,DOGEUSDT`, `FIB_LEVELS=0.382,0.5,0.618`, `FILTER_ADX=0`, `INTERVAL=15m`. Still not live-ready on these metrics.
 
 ## Tests
 
@@ -205,7 +217,7 @@ Tests cover indicators (incl. MACD/ATR/ADX/Fib), level generation, filter logic,
 
 | Variable | Default | Notes |
 |----------|---------|-------|
-| `SYMBOLS` | `BTCUSDT,ETHUSDT` | Comma-separated |
+| `SYMBOLS` | `BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,DOGEUSDT` | Comma-separated |
 | `INTERVAL` | `15m` | Binance interval (`15m` live default; `1h` experimental via env/`--interval`) |
 | `LEVERAGE` | `10` | Label only |
 | `EMA_FAST` / `EMA_SLOW` | `9` / `21` | |
