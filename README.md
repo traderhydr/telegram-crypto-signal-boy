@@ -15,6 +15,7 @@ Educational / informational trade-**signal** bot for Telegram. It reads **public
 - 4 configurable entry % offsets, 5 TP % targets, SL beyond the ladder
 - Per-symbol/side cooldown (~5h default) to reduce spam
 - Telegram Bot API → channel; **dry-run** prints to stdout when `DRY_RUN=1` or tokens are missing
+- **Historical backtester** for the same strategy (R-multiple metrics)
 
 ## Project layout
 
@@ -24,16 +25,18 @@ signal_bot/
   __main__.py
   config.py           # env-based settings
   models.py           # Signal dataclass + message format
-  binance_client.py   # public klines client
+  binance_client.py   # public klines client (+ paginated history)
   indicators.py       # EMA + RSI
   levels.py           # entries / TPs / SL
   engine.py           # direction + cooldown + scan
+  backtest.py         # historical walk-forward backtester
   telegram_client.py  # Bot API + dry-run
   runner.py           # CLI
 tests/
   test_indicators.py
   test_levels.py
   test_engine_direction.py
+  test_backtest.py
 .env.example
 requirements.txt
 pyproject.toml
@@ -47,7 +50,7 @@ pyproject.toml
 git clone https://github.com/traderhydr/telegram-crypto-signal-boy.git
 cd telegram-crypto-signal-boy
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
 pip install -r requirements.txt
 ```
 
@@ -117,6 +120,31 @@ export TELEGRAM_CHANNEL_ID=@your_channel
 python -m signal_bot --once
 ```
 
+## Backtest
+
+Walk-forward backtest of the **same** EMA9/EMA21 + RSI14 rules, levels, and cooldown the live bot uses. Fetches paginated public Binance USDT-M 15m klines (~120 days by default; falls back to `www.binance.com` if `fapi` returns 451).
+
+```bash
+python -m signal_bot.backtest --days 120 --symbols BTCUSDT,ETHUSDT
+# or:
+python -m signal_bot --backtest --days 120 --symbols BTCUSDT,ETHUSDT
+```
+
+### Simulation assumptions
+
+| Rule | Detail |
+|------|--------|
+| Reference | Close of the signal bar |
+| Levels | `generate_levels` / Config defaults (4 entries, 5 TPs, 1 SL) |
+| Entry fill | Position opens when a **later** bar's range touches **Entry1**; size = 1.0 unit notional |
+| Exits | Equal size across 5 TPs (20% each); remaining size stopped at SL |
+| Intra-bar path | **Conservative**: LONG checks low (SL) before high (TPs); SHORT checks high (SL) before low (TPs) |
+| Cooldown | Same as live: per symbol/side after a signal is emitted |
+| Overlap | At most one open simulated position per symbol |
+| Metrics | R-multiples where 1R = \|Entry1 − SL\| |
+
+Output includes trades, wins/losses, win rate, total R, avg R, max drawdown (R), profit factor, and per-symbol + combined rows.
+
 ## Tests
 
 ```bash
@@ -124,7 +152,7 @@ pip install pytest
 pytest -q
 ```
 
-Tests cover indicators and level generation **without network**.
+Tests cover indicators, level generation, and backtest simulation helpers **without network**.
 
 ## Configuration cheat sheet
 
