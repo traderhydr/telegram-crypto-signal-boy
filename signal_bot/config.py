@@ -85,6 +85,29 @@ class Config:
     adx_period: int = 14
     adx_min: float = 25.0
 
+    # --- Volume filters (FILTER_VOLUME on by default) ---
+    filter_volume: bool = True
+    vol_sma_period: int = 20
+    vol_ratio_min: float = 1.2
+    vol_confirm_bars: int = 1  # signal bar, or max rel_vol over last N bars
+    filter_obv: bool = True  # OBV slope / volume-price agreement
+    obv_lookback: int = 5
+
+    # --- SMC approximations (FILTER_SMC on; OB optional) ---
+    # Practical BOS + FVG (+ optional order block). Not a TradingView SMC clone.
+    filter_smc: bool = True
+    filter_smc_structure: bool = True
+    filter_smc_fvg: bool = True
+    filter_smc_ob: bool = False  # optional; off by default to preserve sample size
+    smc_swing_left: int = 3
+    smc_swing_right: int = 3
+    smc_structure_max_age: int = 40  # bars since last aligned BOS
+    smc_fvg_lookback: int = 60
+    smc_fvg_touch_atr: float = 0.35
+    smc_ob_lookback: int = 15
+    smc_ob_touch_atr: float = 0.5
+    smc_ob_max_age: int = 40
+
     # Entry ladder: % offsets from reference (signed by side in engine)
     # LONG: buy dips -> negative offsets; SHORT: sell rips -> positive offsets
     entry_offsets_pct: List[float] = field(
@@ -116,6 +139,15 @@ class Config:
         macd_need = self.macd_slow + self.macd_signal
         adx_need = 2 * self.adx_period + 1 if self.filter_adx else 0
         fib_need = self.fib_lookback if self.filter_fib else 0
+        vol_need = self.vol_sma_period + 1 if self.filter_volume else 0
+        obv_need = self.obv_lookback + 2 if self.filter_obv else 0
+        smc_need = 0
+        if self.filter_smc:
+            smc_need = max(
+                self.smc_swing_left + self.smc_swing_right + 5,
+                self.smc_fvg_lookback if self.filter_smc_fvg else 0,
+                self.smc_structure_max_age + 10,
+            )
         return max(
             self.ema_slow,
             self.rsi_period + 1,
@@ -123,6 +155,9 @@ class Config:
             macd_need,
             adx_need,
             fib_need,
+            vol_need,
+            obv_need,
+            smc_need,
             50,
         )
 
@@ -163,6 +198,24 @@ class Config:
             atr_max_pct=float(os.getenv("ATR_MAX_PCT", "0")),
             adx_period=int(os.getenv("ADX_PERIOD", "14")),
             adx_min=float(os.getenv("ADX_MIN", "25")),
+            filter_volume=_parse_bool(os.getenv("FILTER_VOLUME"), True),
+            vol_sma_period=int(os.getenv("VOL_SMA_PERIOD", "20")),
+            vol_ratio_min=float(os.getenv("VOL_RATIO_MIN", "1.2")),
+            vol_confirm_bars=int(os.getenv("VOL_CONFIRM_BARS", "1")),
+            filter_obv=_parse_bool(os.getenv("FILTER_OBV"), True),
+            obv_lookback=int(os.getenv("OBV_LOOKBACK", "5")),
+            filter_smc=_parse_bool(os.getenv("FILTER_SMC"), True),
+            filter_smc_structure=_parse_bool(os.getenv("FILTER_SMC_STRUCTURE"), True),
+            filter_smc_fvg=_parse_bool(os.getenv("FILTER_SMC_FVG"), True),
+            filter_smc_ob=_parse_bool(os.getenv("FILTER_SMC_OB"), False),
+            smc_swing_left=int(os.getenv("SMC_SWING_LEFT", "3")),
+            smc_swing_right=int(os.getenv("SMC_SWING_RIGHT", "3")),
+            smc_structure_max_age=int(os.getenv("SMC_STRUCTURE_MAX_AGE", "40")),
+            smc_fvg_lookback=int(os.getenv("SMC_FVG_LOOKBACK", "60")),
+            smc_fvg_touch_atr=float(os.getenv("SMC_FVG_TOUCH_ATR", "0.35")),
+            smc_ob_lookback=int(os.getenv("SMC_OB_LOOKBACK", "15")),
+            smc_ob_touch_atr=float(os.getenv("SMC_OB_TOUCH_ATR", "0.5")),
+            smc_ob_max_age=int(os.getenv("SMC_OB_MAX_AGE", "40")),
             entry_offsets_pct=_parse_float_list(
                 os.getenv("ENTRY_OFFSETS_PCT", ""),
                 [0.0, -0.3, -0.6, -1.0],
@@ -199,6 +252,16 @@ class Config:
             return False, "FIB_LEVELS must have at least one ratio"
         if any(r <= 0 or r >= 1 for r in self.fib_levels):
             return False, "FIB_LEVELS ratios must be in (0, 1)"
+        if self.vol_sma_period < 2:
+            return False, "VOL_SMA_PERIOD must be >= 2"
+        if self.vol_ratio_min <= 0:
+            return False, "VOL_RATIO_MIN must be > 0"
+        if self.vol_confirm_bars < 1:
+            return False, "VOL_CONFIRM_BARS must be >= 1"
+        if self.obv_lookback < 1:
+            return False, "OBV_LOOKBACK must be >= 1"
+        if self.smc_swing_left < 1 or self.smc_swing_right < 1:
+            return False, "SMC_SWING_LEFT/RIGHT must be >= 1"
         if self.kline_limit < self.warmup_bars():
             return (
                 False,
