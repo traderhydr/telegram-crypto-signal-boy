@@ -194,16 +194,16 @@ def test_adx_trending_vs_flat():
     assert adx_trend > 20
 
 
-def test_default_fib_ratios_exclude_0382():
-    """Default confluence ratios are 0.5 and 0.618 only (0.382 dropped)."""
+def test_default_fib_ratios_include_0382():
+    """Default confluence ratios are 0.382, 0.5, and 0.618 (prior best set)."""
     from signal_bot.indicators import FIB_RATIOS
 
-    assert FIB_RATIOS == (0.5, 0.618)
-    assert 0.382 not in FIB_RATIOS
+    assert FIB_RATIOS == (0.382, 0.5, 0.618)
+    assert 0.382 in FIB_RATIOS
 
 
-def test_fib_confluence_rejects_0382_zone_by_default():
-    """Price parked only at 0.382 should fail with default ratios; pass if 0.382 restored."""
+def test_fib_confluence_accepts_0382_zone_by_default():
+    """Price parked at 0.382 should pass with default ratios; fail if 0.382 dropped."""
     n = 80
     lows = [150.0] * n
     highs = [160.0] * n
@@ -215,18 +215,18 @@ def test_fib_confluence_rejects_0382_zone_by_default():
     ok_default, detail = fib_confluence(
         price, True, highs, lows, lookback=80, tolerance=1.0
     )
-    assert not ok_default, detail
-    ok_legacy, detail2 = fib_confluence(
+    assert ok_default, detail
+    assert "0.382" in detail
+    ok_tight, detail2 = fib_confluence(
         price,
         True,
         highs,
         lows,
         lookback=80,
         tolerance=1.0,
-        ratios=(0.382, 0.5, 0.618),
+        ratios=(0.5, 0.618),
     )
-    assert ok_legacy, detail2
-    assert "0.382" in detail2
+    assert not ok_tight, detail2
 
 
 def test_retracement_levels_respect_custom_ratios():
@@ -238,6 +238,6 @@ def test_retracement_levels_respect_custom_ratios():
     swing = find_swing(highs, lows, lookback=80)
     assert swing is not None and swing.is_upswing
     default_levels = dict(swing.retracement_levels())
-    assert set(default_levels) == {0.5, 0.618}
-    custom = dict(swing.retracement_levels(ratios=(0.382, 0.5)))
-    assert set(custom) == {0.382, 0.5}
+    assert set(default_levels) == {0.382, 0.5, 0.618}
+    custom = dict(swing.retracement_levels(ratios=(0.5, 0.618)))
+    assert set(custom) == {0.5, 0.618}
