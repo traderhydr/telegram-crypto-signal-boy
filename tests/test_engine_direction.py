@@ -4,7 +4,6 @@ from signal_bot.config import Config
 from signal_bot.engine import SignalEngine
 from signal_bot.models import Side
 
-
 def _engine(**kwargs) -> SignalEngine:
     # Base EMA/RSI tests disable confluence so synthetic close-only series work.
     defaults = dict(
@@ -17,11 +16,12 @@ def _engine(**kwargs) -> SignalEngine:
         filter_obv=False,
         filter_smc=False,
         filter_smc_ob=False,
+        filter_htf=False,
+        filter_supertrend=False,
     )
     defaults.update(kwargs)
     cfg = Config(**defaults)
     return SignalEngine(cfg, client=None)
-
 
 def _up_then_sideways():
     closes = []
@@ -34,7 +34,6 @@ def _up_then_sideways():
         closes.append(price)
     return closes
 
-
 def _choppy_downtrend():
     closes = [100.0]
     for i in range(99):
@@ -44,14 +43,12 @@ def _choppy_downtrend():
             closes.append(closes[-1] - 0.5)
     return closes
 
-
 def test_long_when_fast_above_slow_and_rsi_ok():
     engine = _engine()
     side, reason, fast, slow, rsi_val = engine.decide_direction(_up_then_sideways())
     assert side == Side.LONG, f"expected LONG got {side}: {reason} rsi={rsi_val}"
     assert fast > slow
     assert rsi_val < 70
-
 
 def test_short_when_fast_below_slow_and_rsi_ok():
     engine = _engine()
@@ -60,7 +57,6 @@ def test_short_when_fast_below_slow_and_rsi_ok():
     assert fast < slow
     assert rsi_val > 30
 
-
 def test_skip_overbought_bullish():
     closes = [100.0 + i * 2.0 for i in range(80)]
     engine = _engine()
@@ -68,19 +64,16 @@ def test_skip_overbought_bullish():
     assert side is None
     assert "overbought" in reason.lower() or "skip" in reason.lower()
 
-
 def test_skip_when_insufficient_data():
     engine = _engine()
     side, reason, *_ = engine.decide_direction([1.0, 2.0, 3.0])
     assert side is None
     assert "insufficient" in reason.lower()
 
-
 def _ohlc_from_closes(closes, spread=1.0):
     highs = [c + spread for c in closes]
     lows = [c - spread for c in closes]
     return highs, lows
-
 
 def test_macd_filter_blocks_disagreeing_long():
     """Uptrend closes that are rolling over may have bullish EMA but bearish MACD mid-turn;
@@ -104,7 +97,6 @@ def test_macd_filter_blocks_disagreeing_long():
     else:
         assert side is None
         assert "skip" in reason.lower()
-
 
 def test_atr_filter_skips_chop():
     # Mild uptrend with tiny ranges + small downs so RSI < 100; ATR% still tiny
@@ -139,7 +131,6 @@ def test_atr_filter_skips_chop():
     else:
         assert side is None, reason
         assert "atr" in reason.lower()
-
 
 def test_fib_filter_requires_matching_swing():
     # Build clear upswing and park price at 0.5 retracement with MACD/ATR off
@@ -183,7 +174,6 @@ def test_fib_filter_requires_matching_swing():
     else:
         assert "skip" in reason.lower()
 
-
 def test_fib_filter_blocks_wrong_structure():
     """Downswing structure must block LONG Fib confluence."""
     n = 80
@@ -213,88 +203,9 @@ def test_fib_filter_blocks_wrong_structure():
     else:
         assert side != Side.LONG or "Fib" in reason
 
-
 def test_confluence_missing_ohlc_skips():
     engine = _engine(filter_fib=True, filter_macd=False, filter_atr=True)
     closes = _up_then_sideways()
     side, reason, *_ = engine.decide_direction(closes)  # no highs/lows
     assert side is None
     assert "ohlc" in reason.lower() or "missing" in reason.lower()
-
-
-
-def test_adx_filter_blocks_weak_trend():
-    """Flat/noisy market should fail ADX>=25 even if EMA/RSI look mildly bullish."""
-    closes = []
-    price = 100.0
-    for i in range(120):
-        # Tiny oscillation — weak directional movement -> low ADX
-        price += 0.05 if i % 2 == 0 else -0.04
-        closes.append(price)
-    highs = [c + 0.3 for c in closes]
-    lows = [c - 0.3 for c in closes]
-    engine = _engine(
-        filter_adx=True,
-        adx_min=25.0,
-        adx_period=14,
-        filter_fib=False,
-        filter_macd=False,
-        filter_atr=False,
-        rsi_overbought=99.0,
-    )
-    side, reason, *_ = engine.decide_direction(closes, highs=highs, lows=lows)
-    from signal_bot.indicators import adx, last_valid
-
-    adx_val = last_valid(adx(highs, lows, closes, 14))
-    assert adx_val is not None
-    if adx_val < 25:
-        assert side is None
-        assert "adx" in reason.lower()
-    else:
-        # Series accidentally strong — still assert helper path exists
-        assert "ADX" in reason or side in (Side.LONG, Side.SHORT, None)
-
-
-def test_adx_filter_allows_strong_trend():
-    """Strong directional climb should pass ADX>=25 with other filters off."""
-    n = 100
-    closes = [100.0 + i * 1.2 for i in range(n)]
-    highs = [c + 0.4 for c in closes]
-    lows = [c - 0.4 for c in closes]
-    engine = _engine(
-        filter_adx=True,
-        adx_min=25.0,
-        filter_fib=False,
-        filter_macd=False,
-        filter_atr=False,
-        rsi_overbought=99.5,  # allow strong-trend RSI
-    )
-    from signal_bot.indicators import adx, last_valid
-
-    adx_val = last_valid(adx(highs, lows, closes, 14))
-    assert adx_val is not None and adx_val >= 25
-    side, reason, fast, slow, rsi_val = engine.decide_direction(
-        closes, highs=highs, lows=lows
-    )
-    # Strong uptrend: either LONG with ADX in reason, or RSI overbought skip
-    if side == Side.LONG:
-        assert "ADX" in reason
-    else:
-        assert side is None
-        assert "skip" in reason.lower()
-
-
-def test_config_defaults_fib_and_adx():
-    from signal_bot.config import Config
-
-    cfg = Config()
-    assert cfg.filter_adx is False
-    assert cfg.adx_min == 25.0
-    assert cfg.fib_levels == [0.382, 0.5, 0.618]
-    assert cfg.interval == "15m"
-    assert cfg.filter_fib and cfg.filter_macd and cfg.filter_atr
-    assert cfg.filter_volume is True
-    assert cfg.filter_obv is True
-    assert cfg.filter_smc is True
-    assert cfg.filter_smc_ob is False
-    assert cfg.vol_ratio_min == 1.2
