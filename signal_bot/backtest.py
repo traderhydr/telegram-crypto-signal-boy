@@ -156,11 +156,13 @@ def format_report(
     end: datetime,
     days: float,
     config: Optional[Config] = None,
+    interval: Optional[str] = None,
 ) -> str:
     filters = _filter_summary(config) if config else "Fib+MACD+ATR"
+    tf = interval or (config.interval if config else "15m")
     lines = [
         "=" * 72,
-        f"BACKTEST REPORT - EMA9/21 + RSI14 + [{filters}]",
+        f"BACKTEST REPORT - EMA9/21 + RSI14 + [{filters}] @ {tf}",
         f"Date range: {start.strftime('%Y-%m-%d %H:%M UTC')} -> "
         f"{end.strftime('%Y-%m-%d %H:%M UTC')} (~{days:.0f} days)",
         "=" * 72,
@@ -237,7 +239,8 @@ def run_backtest(
     combined = merge_metrics(per_symbol)
     assert range_start and range_end
     report = format_report(
-        per_symbol, combined, range_start, range_end, days, config=config
+        per_symbol, combined, range_start, range_end, days,
+        config=config, interval=interval,
     )
     return per_symbol, combined, report
 
@@ -248,6 +251,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     parser.add_argument("--days", type=float, default=120.0, help="Lookback days")
     parser.add_argument("--symbols", type=str, default="", help="Comma-separated symbols")
+    parser.add_argument(
+        "--interval",
+        type=str,
+        default="",
+        help="Candle interval override (e.g. 15m, 1h). Default: INTERVAL env / Config",
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
 
@@ -259,6 +268,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
 
     config = Config.from_env()
+    if args.interval.strip():
+        config.interval = args.interval.strip()
     ok, msg = config.validate()
     if not ok:
         logger.error("Invalid config: %s", msg)
