@@ -16,6 +16,8 @@ def _engine(**kwargs) -> SignalEngine:
         filter_obv=False,
         filter_smc=False,
         filter_smc_ob=False,
+        filter_htf=False,
+        filter_supertrend=False,
         rsi_overbought=99.0,
         rsi_oversold=1.0,
     )
