@@ -18,10 +18,20 @@ def _parse_float_list(raw: str, default: List[float]) -> List[float]:
     return [float(x.strip()) for x in raw.split(",") if x.strip()]
 
 
+DEFAULT_SYMBOLS: List[str] = [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "BNBUSDT",
+    "XRPUSDT",
+    "DOGEUSDT",
+]
+
+
 def _parse_symbols(raw: str) -> List[str]:
     raw = (raw or "").strip()
     if not raw:
-        return ["BTCUSDT", "ETHUSDT"]
+        return list(DEFAULT_SYMBOLS)
     return [s.strip().upper() for s in raw.split(",") if s.strip()]
 
 
@@ -35,7 +45,7 @@ def _parse_bool(raw: str, default: bool) -> bool:
 class Config:
     """Runtime configuration for the signal bot."""
 
-    symbols: List[str] = field(default_factory=lambda: ["BTCUSDT", "ETHUSDT"])
+    symbols: List[str] = field(default_factory=lambda: list(DEFAULT_SYMBOLS))
     interval: str = "15m"
     leverage: int = 10
     kline_limit: int = 200
@@ -125,7 +135,7 @@ class Config:
         dry_run = dry_env in ("1", "true", "yes") or not token or not channel
 
         return cls(
-            symbols=_parse_symbols(os.getenv("SYMBOLS", "BTCUSDT,ETHUSDT")),
+            symbols=_parse_symbols(os.getenv("SYMBOLS", ",".join(DEFAULT_SYMBOLS))),
             interval=os.getenv("INTERVAL", "15m").strip() or "15m",
             leverage=int(os.getenv("LEVERAGE", "10")),
             kline_limit=int(os.getenv("KLINE_LIMIT", "200")),
