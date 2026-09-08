@@ -58,6 +58,12 @@ def main(argv: list | None = None) -> int:
         help="Comma-separated symbols override (live or backtest)",
     )
     parser.add_argument(
+        "--interval",
+        type=str,
+        default="",
+        help="Candle interval override (e.g. 15m, 1h; live or backtest)",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -74,6 +80,8 @@ def main(argv: list | None = None) -> int:
         bt_argv = ["--days", str(args.days)]
         if args.symbols.strip():
             bt_argv.extend(["--symbols", args.symbols])
+        if args.interval.strip():
+            bt_argv.extend(["--interval", args.interval])
         if args.verbose:
             bt_argv.append("-v")
         return backtest_main(bt_argv)
@@ -88,6 +96,8 @@ def main(argv: list | None = None) -> int:
         config.symbols = [
             s.strip().upper() for s in args.symbols.split(",") if s.strip()
         ]
+    if args.interval.strip():
+        config.interval = args.interval.strip()
 
     log.info(
         "Starting bot symbols=%s interval=%s leverage=%sx dry_run=%s",
