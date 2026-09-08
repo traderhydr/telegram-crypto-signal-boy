@@ -284,8 +284,8 @@ def test_config_defaults_fib_and_adx():
     from signal_bot.config import Config
 
     cfg = Config()
-    assert cfg.filter_adx is True
+    assert cfg.filter_adx is False
     assert cfg.adx_min == 25.0
-    assert cfg.fib_levels == [0.5, 0.618]
+    assert cfg.fib_levels == [0.382, 0.5, 0.618]
     assert cfg.interval == "15m"
     assert cfg.filter_fib and cfg.filter_macd and cfg.filter_atr
