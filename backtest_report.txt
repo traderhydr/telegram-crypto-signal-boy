@@ -1,16 +1,22 @@
 ========================================================================
-BACKTEST REPORT - EMA9/21 + RSI14 + [Fib(lb=80,0.5/0.618)+MACD(12/26/9)+ATR%>=0.15+ADX>=25.0] @ 15m
-Date range: 2026-05-10 08:00 UTC -> 2026-09-08 05:14 UTC (~120 days)
+BACKTEST REPORT - EMA9/21 + RSI14 + [Fib(lb=80,0.382/0.5/0.618)+MACD(12/26/9)+ATR%>=0.15] @ 15m
+Date range: 2026-05-10 08:45 UTC -> 2026-09-08 05:59 UTC (~120 days)
 ========================================================================
 
 Symbol        Trades   Wins  Losses    Win%   Total R    Avg R   MaxDD R      PF
 ------------------------------------------------------------------------
-BTCUSDT           21      7      14   33.3%     -5.22   -0.248      7.20    0.49
-ETHUSDT           25     13      12   52.0%      1.96    0.078      2.73    1.20
+BTCUSDT           49     20      29   40.8%     -2.40   -0.049     12.58    0.87
+ETHUSDT           75     35      40   46.7%      0.38    0.005      6.54    1.01
+SOLUSDT           79     33      46   41.8%     -5.04   -0.064     13.32    0.84
+BNBUSDT           47     23      24   48.9%      0.56    0.012      5.05    1.03
+XRPUSDT           68     32      36   47.1%      3.04    0.045      5.33    1.11
+DOGEUSDT          78     37      41   47.4%      3.09    0.040      4.94    1.11
 ------------------------------------------------------------------------
-COMBINED          46     20      26   43.5%     -3.26   -0.071      8.12    0.84
+COMBINED         396    180     216   45.5%     -0.37   -0.001     28.77    1.00
 ========================================================================
 
 Assumptions: Entry1 touch fill; 20% size per TP; conservative
 OHLC (adverse before favorable); cooldown per symbol/side;
 one open position per symbol; metrics in R-multiples.
+
+vs BTC+ETH-only baseline: -2.23R / 124 trades / PF 0.95 / maxDD 14.56
