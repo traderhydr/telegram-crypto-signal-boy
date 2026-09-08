@@ -1,4 +1,4 @@
-"""CLI runner: one-shot scan or continuous poll loop."""
+"""CLI runner: one-shot scan, continuous poll loop, or backtest."""
 
 from __future__ import annotations
 
@@ -41,6 +41,23 @@ def main(argv: list | None = None) -> int:
         help="Run a single scan and exit (default: continuous loop)",
     )
     parser.add_argument(
+        "--backtest",
+        action="store_true",
+        help="Run historical backtest instead of live scanning",
+    )
+    parser.add_argument(
+        "--days",
+        type=float,
+        default=120.0,
+        help="Backtest lookback days (with --backtest; default: 120)",
+    )
+    parser.add_argument(
+        "--symbols",
+        type=str,
+        default="",
+        help="Comma-separated symbols override (live or backtest)",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -51,11 +68,26 @@ def main(argv: list | None = None) -> int:
     setup_logging(args.verbose)
     log = logging.getLogger(__name__)
 
+    if args.backtest:
+        from .backtest import main as backtest_main
+
+        bt_argv = ["--days", str(args.days)]
+        if args.symbols.strip():
+            bt_argv.extend(["--symbols", args.symbols])
+        if args.verbose:
+            bt_argv.append("-v")
+        return backtest_main(bt_argv)
+
     config = Config.from_env()
     ok, msg = config.validate()
     if not ok:
         log.error("Invalid config: %s", msg)
         return 2
+
+    if args.symbols.strip():
+        config.symbols = [
+            s.strip().upper() for s in args.symbols.split(",") if s.strip()
+        ]
 
     log.info(
         "Starting bot symbols=%s interval=%s leverage=%sx dry_run=%s",
