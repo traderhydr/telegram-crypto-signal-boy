@@ -29,6 +29,7 @@ signal_bot/
   indicators.py       # EMA + RSI
   levels.py           # entries / TPs / SL
   engine.py           # direction + cooldown + scan
+  backtest_core.py    # fill simulation helpers
   backtest.py         # historical walk-forward backtester
   telegram_client.py  # Bot API + dry-run
   runner.py           # CLI
