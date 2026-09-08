@@ -1,4 +1,4 @@
-"""EMA+RSI strategy backtester (same rules as live bot).
+"""EMA+RSI (+ Fib/MACD/ATR confluence) strategy backtester.
 
 See README Backtest section for fill/path assumptions (Entry1 touch, 20% TPs,
 conservative OHLC, cooldown, R-multiples).
@@ -64,17 +64,23 @@ def backtest_symbol(
     """Walk candles chronologically and simulate the live strategy."""
     engine = engine or SignalEngine(config, client=None)
     metrics = SymbolMetrics(symbol=symbol)
-    warm = max(config.ema_slow, config.rsi_period + 1)
+    warm = config.warmup_bars()
     cooldown = timedelta(hours=config.cooldown_hours)
     last_signal_at: dict = {Side.LONG: None, Side.SHORT: None}
     open_until_index = -1
     closes = [c["close"] for c in candles]
+    highs = [c["high"] for c in candles]
+    lows = [c["low"] for c in candles]
 
     for i in range(warm, len(candles)):
         if i <= open_until_index:
             continue
 
-        side, reason, fast, slow, rsi_val = engine.decide_direction(closes[: i + 1])
+        side, reason, fast, slow, rsi_val = engine.decide_direction(
+            closes[: i + 1],
+            highs=highs[: i + 1],
+            lows=lows[: i + 1],
+        )
         if side is None:
             continue
 
@@ -97,7 +103,7 @@ def backtest_symbol(
         trade = simulate_open_trade(candles, side, entry1, tps, sl, i)
         trade.symbol = symbol
         if not trade.filled:
-            logger.debug("%s %s signal @ %s — entry not filled", symbol, side.value, bar_time)
+            logger.debug("%s %s signal @ %s - entry not filled", symbol, side.value, bar_time)
             continue
 
         if trade.exit_time is not None:
@@ -111,7 +117,7 @@ def backtest_symbol(
         update_metrics(metrics, trade)
         logger.debug(
             "%s %s R=%.3f tps=%d stopped=%s reason=%s",
-            symbol, side.value, trade.r_multiple, trade.tps_hit, trade.stopped, trade.reason,
+            symbol, side.value, trade.r_multiple, trade.tps_hit, trade.stopped, reason,
         )
 
     return metrics
@@ -128,17 +134,34 @@ def merge_metrics(parts: Sequence[SymbolMetrics], label: str = "COMBINED") -> Sy
     return combined
 
 
+def _filter_summary(config: Config) -> str:
+    flags = []
+    if config.filter_fib:
+        flags.append(f"Fib(lb={config.fib_lookback})")
+    if config.filter_macd:
+        flags.append(
+            f"MACD({config.macd_fast}/{config.macd_slow}/{config.macd_signal})"
+        )
+    if config.filter_atr:
+        flags.append(f"ATR%>={config.atr_min_pct}")
+    if config.filter_adx:
+        flags.append(f"ADX>={config.adx_min}")
+    return "+".join(flags) if flags else "no confluence filters"
+
+
 def format_report(
     per_symbol: Sequence[SymbolMetrics],
     combined: SymbolMetrics,
     start: datetime,
     end: datetime,
     days: float,
+    config: Optional[Config] = None,
 ) -> str:
+    filters = _filter_summary(config) if config else "Fib+MACD+ATR"
     lines = [
         "=" * 72,
-        "BACKTEST REPORT — EMA9/EMA21 + RSI14 (same as live bot)",
-        f"Date range: {start.strftime('%Y-%m-%d %H:%M UTC')} → "
+        f"BACKTEST REPORT - EMA9/21 + RSI14 + [{filters}]",
+        f"Date range: {start.strftime('%Y-%m-%d %H:%M UTC')} -> "
         f"{end.strftime('%Y-%m-%d %H:%M UTC')} (~{days:.0f} days)",
         "=" * 72,
         "",
@@ -183,7 +206,7 @@ def run_backtest(
     interval_ms = INTERVAL_MS.get(interval, 900_000)
     end_ms = int(time.time() * 1000)
     start_ms = end_ms - int(days * 24 * 60 * 60 * 1000)
-    warm = max(config.ema_slow, config.rsi_period + 1) + 5
+    warm = config.warmup_bars() + 5
     fetch_start = start_ms - warm * interval_ms
 
     per_symbol: List[SymbolMetrics] = []
@@ -191,7 +214,7 @@ def run_backtest(
     range_end: Optional[datetime] = None
 
     for symbol in symbols:
-        logger.info("Fetching ~%.0f days of %s %s klines…", days, symbol, interval)
+        logger.info("Fetching ~%.0f days of %s %s klines...", days, symbol, interval)
         candles = client.get_historical_klines(
             symbol, interval=interval, start_time=fetch_start, end_time=end_ms,
         )
@@ -213,13 +236,15 @@ def run_backtest(
 
     combined = merge_metrics(per_symbol)
     assert range_start and range_end
-    report = format_report(per_symbol, combined, range_start, range_end, days)
+    report = format_report(
+        per_symbol, combined, range_start, range_end, days, config=config
+    )
     return per_symbol, combined, report
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Backtest EMA+RSI signal strategy on Binance USDT-M history"
+        description="Backtest EMA+RSI+confluence signal strategy on Binance USDT-M history"
     )
     parser.add_argument("--days", type=float, default=120.0, help="Lookback days")
     parser.add_argument("--symbols", type=str, default="", help="Comma-separated symbols")
